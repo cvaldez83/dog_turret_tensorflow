@@ -37,7 +37,7 @@ LEFT_MOST_ANGLE = 100 # degrees, gun turret left most angle
 RIGHT_MOST_ANGLE = 170 # degrees, gun turret right most angle
 TRIGGER_ANGLE_RANGE = 50 # degrees, desired full range of servo in degrees
 GUN_WINDUP_TIMER = 5 # seconds, windup gun motor after this many seconds from initial detection
-GUN_FIRE_TIMER = 10 # seconds, pull trigger after this many seconds from initial detection
+GUN_FIRE_TIMER = 1 # seconds, pull trigger after this many seconds from initial detection
 min_pulse = 500 # 0 degrees
 max_pulse = 2400 # 180 degrees
 
@@ -67,18 +67,12 @@ weight=3
 myColor=(255,0,0)
 
 
-# Crop dimensions
-height_start = 250
-height_end = 450
-width_start = 180
-width_end = 600
-
-
 """ AUTO-CALCULATED STUFF FOR SERVO i2c """
 kit = ServoKit(channels=16)
 kit.servo[0].set_pulse_width_range(min_pulse, max_pulse) #channel 0 is the pan servo
 kit.servo[1].set_pulse_width_range(min_pulse, max_pulse) #channel 1 is the trigger servo
 TURRET_ANGLE_RANGE = RIGHT_MOST_ANGLE - LEFT_MOST_ANGLE
+
 
 
 """ CONSTANTS """
@@ -121,11 +115,17 @@ COOLDOWN_FIRSTSPOT_PIC = time.time() + TIMER_COOLDOWN_FIRST_SPOT_PIC
 COUNTER_NUMBER_OF_SHOTS = 0
 COUNTER_NUMBER_OF_WINDUP = 0
 
+def center_turret():
+    print(f'centering turret slowly')
+    TURRET_CENTER_ANGLE = TURRET_ANGLE_RANGE / 2 + LEFT_MOST_ANGLE
+    kit.servo[0].angle = TURRET_CENTER_ANGLE
+
+
 def move_servo(desired_angle):
     # print(f'move_servo starting')
     step_angle = 1
-    print(f'kit.servo[0].angle = {kit.servo[0].angle}')
-    print(f'rounding = {round(kit.servo[0].angle)}')
+    # print(f'kit.servo[0].angle = {kit.servo[0].angle}')
+    # print(f'rounding = {round(kit.servo[0].angle)}')
     starting_angle = int(round(kit.servo[0].angle))
     current_angle = starting_angle
     desired_angle = int(round(desired_angle))
@@ -173,7 +173,6 @@ if OPTION_SERVO_SWEEP == 'yes':
         move_servo(RIGHT_MOST_ANGLE)
         time.sleep(5)
 
-
 flag_quit_program = False #flag used to quit if user presses q
 fps=0
 tStart=time.time()
@@ -191,7 +190,7 @@ while True:
     if GPIO.input(15) == 0: # run loop if switch is off
         print("Switch is off")
 
-    if GPIO.input(15) == 1 and COUNTER_NUMBER_OF_SHOTS <= MAX_NUMBER_OF_SHOTS: # run loop while switch is on
+    while GPIO.input(15) == 1 and COUNTER_NUMBER_OF_SHOTS <= MAX_NUMBER_OF_SHOTS: # run loop while switch is on
         print("Switch is on")
 
         """ Camera stuff """
@@ -202,7 +201,6 @@ while True:
         imRGB=cv2.cvtColor(im,cv2.COLOR_BGR2RGB)
         imTensor=vision.TensorImage.create_from_array(imRGB)
         my_detects=detector.detect(imTensor) #all of the detected objects, output: DetectionResult(detections=[Detection(bounding_box=BoundingBox(origin_x=259, origin_y=184, width=246, height=166), categories=[Category(index=0, score=0.39453125, display_name='', category_name='person')])])
-        print(GPIO.input(15))
 
         time_minus_tInitial = time.time()-tInitial  
         print(f'time_minus_tInitial = {time_minus_tInitial:.2f}')  
@@ -213,12 +211,13 @@ while True:
             cv2.imwrite(img_name, im)
             flag_initial_takepic = False
 
+
         # print(my_detects)
         # print('end of my_detections')
         for my_detection in my_detects.detections:
             if my_detection: #executes code if something was detected
-                print(my_detection)
-                print()
+                # print(my_detection)
+                # print()
                 flagSpotted = True
                 # print(my_detection.bounding_box.origin_x)
                 UL=(my_detection.bounding_box.origin_x, my_detection.bounding_box.origin_y) #upper left of bounding box
@@ -237,11 +236,12 @@ while True:
                 shoot_at_angle = TURRET_ANGLE_RANGE*(center_mass / imageSize_width) + LEFT_MOST_ANGLE
                 shoot_at_angle = (180 - shoot_at_angle) + 90
 
-                """ saves overwritable pic continuously regardless of detection (used for debugging)"""
-                if str(round(time_minus_tInitial,1))[-1] == "5": 
-                    cv2.imwrite(filename_continuous_pic, img_uncropped)
+                # """ saves overwritable pic continuously regardless of detection (used for debugging)"""
+                # if str(round(time_minus_tInitial,1))[-1] == "5": 
+                #     cv2.imwrite(filename_continuous_pic, img_uncropped)
             
             else:
+                print('DEBUG: Nothing detected, switching flagSpotted to False')
                 flagSpotted = False
                 GPIO.output(14,GPIO.LOW) # this will windown gun motor
                 """ saves overwritable pic continuously regardless of detection (used for debugging)"""
@@ -256,6 +256,82 @@ while True:
                     COUNTER_FIRSTSPOT_PIC = 0
                     COOLDOWN_FIRSTSPOT_PIC = time.time() + TIMER_COOLDOWN_FIRST_SPOT_PIC # Timer set to 5 minutes
                 break
+
+        # First Spot:
+        if flagSpotted and tInitial == 0:
+            print(f'{str(time.time()-tInitial)} shoot_angle={shoot_at_angle:.2f}. Initial target acquired')
+        # if len(faces)==1 and tInitial == 0:
+            tInitial = time.time()
+            init_time_plus_G_W_T = time.time() + GUN_WINDUP_TIMER 
+            init_time_plus_G_F_T = time.time() + GUN_FIRE_TIMER
+            cv2.imwrite('opencv_pic20_firstpot.png', im)
+            move_servo(shoot_at_angle)
+
+            """ Take pic only every 5 minutes """
+            if COUNTER_FIRSTSPOT_PIC == 0:
+                formatted_epoch_time = time.strftime('%Y%m%d_%H:%M:%S', time.localtime(time.time()))
+                cv2.imwrite(f'opencv_pics/firstspot_{formatted_epoch_time}.png', im)
+                COUNTER_FIRSTSPOT_PIC = 1
+            elif COUNTER_FIRSTSPOT_PIC == 1 and time.time() > COOLDOWN_FIRSTSPOT_PIC:
+                COUNTER_FIRSTSPOT_PIC = 0
+                COOLDOWN_FIRSTSPOT_PIC = time.time() + TIMER_COOLDOWN_FIRST_SPOT_PIC # Timer set to 5 minutes
+
+
+        # print(f'FLAGS: flagSpotted = {flagSpotted}')
+        # print(f'tInitial = {tInitial}, time = {time.time()}')
+        # print(f'FLAGS: init_time_plus_G_W_T={init_time_plus_G_W_T})
+        # print(f'init_time_plus_G_F_T={init_time_plus_G_F_T}')
+        
+        
+        print(f'FLAGS: COUNTER_NUMBER_OF_WINDUP={COUNTER_NUMBER_OF_WINDUP}, MAX_NUMBER_OF_WINDUP={MAX_NUMBER_OF_WINDUP}')
+        if flagSpotted and time.time() > init_time_plus_G_W_T:
+            print('time is greater than init_time_plus_G_W_T')
+        if flagSpotted and time.time() < init_time_plus_G_F_T:
+            print('time is less than init_time_plus_GFT')
+
+        # Windingup: if spotted and time is over init_time_plus_G_W_T then wind up gun
+        if flagSpotted and tInitial !=0 and time.time() > init_time_plus_G_W_T and time.time() < init_time_plus_G_F_T and COUNTER_NUMBER_OF_WINDUP <= MAX_NUMBER_OF_WINDUP:
+            print(f'{str(time.time()-tInitial)}, winding up gun, shoot_angle={shoot_at_angle:.2f}. ')
+            cv2.imwrite('opencv_pic30_windup.png', im)
+            move_servo(shoot_at_angle)
+            if OPTION_WINDUP_ON_OFF == "on":
+                GPIO.output(14,GPIO.HIGH) #This will windup the gun motor
+            COUNTER_NUMBER_OF_WINDUP += 1
+            """ CV: what does code below do? """
+            if flagWindingUp == False:
+                formatted_epoch_time = time.strftime('%Y%m%d_%H:%M:%S', time.localtime(time.time()))
+                cv2.imwrite(f'opencv_pics/windup_{formatted_epoch_time}.png', im)
+                flagWindingUp = True # set flag to True since turret is in winding up mode
+            
+
+
+        # Fire!: if spotted and time is greater than init_time_plus_G_F_T 
+        if flagSpotted and flagWindingUp and tInitial != 0 and time.time() > init_time_plus_G_F_T:
+            print(f'{str(time.time()-tInitial)} CONFIRMED, thats them alright! Move to servo angle = {shoot_at_angle:.2f}')
+            cv2.imwrite('opencv_pic40_fire.png', im) # this pic gets overwritten everytime this if statement is executed
+            formatted_epoch_time = time.strftime('%Y%m%d_%H:%M:%S', time.localtime(time.time()))
+            cv2.imwrite(f'opencv_pics/fire_{formatted_epoch_time}.png', im) # this pic is stored in opencv_pics folder
+            move_servo(shoot_at_angle)
+            time.sleep(1)
+            print(f'FIRE!')
+            if OPTION_TRIGGER_ON_OFF == "on":
+                kit.servo[1].angle = TRIGGER_ANGLE_RANGE #activates servo to pull trigger
+                time.sleep(tTriggerPull) #trigger is held for this much time
+                kit.servo[1].angle = 0 # trigger is released
+                time.sleep(1)
+            COUNTER_NUMBER_OF_SHOTS += 1
+            break
+        
+        elif not flagSpotted and tInitial !=0 and time.time()>init_time_plus_G_W_T:
+            # print(str(time.time()-tInitial)+' target lost...')
+            print('target lost')
+            GPIO.output(14,GPIO.LOW) # this will windown gun motor
+            break
+        
+        time.sleep(.2)
+
+
+
 
         image=utils.visualize(im, my_detects)
         cv2.putText(im,str(int(fps))+' FPS',pos,font,height,myColor,weight)
