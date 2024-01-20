@@ -1,5 +1,8 @@
 #initial code base copied from: ~/Python/detect_objects_new_cam_WORKS.py
+#v3 lite does not take and save pictures.
 
+""" IMPROVEMENT IDEAS """
+""" - update code to run on headless raspberry pi """
 
 import os
 import cv2
@@ -15,9 +18,9 @@ from tflite_support.task import vision
 from tabulate import tabulate #to print out variables in a nice table format (debugging purposes)
 
 """ USER INPUTS FOR CODE FLOW """
-OPTION_SERVO_SWEEP = 'no' # set to 'yes' to sweep servo full range for testing
-OPTION_TRIGGER_ON_OFF = "on"
-OPTION_WINDUP_ON_OFF = "on"
+OPTION_SERVO_SWEEP = 'no' # set to 'yes' to sweep servo full range for testing, else "no"
+OPTION_TRIGGER_ON_OFF = "off" # set to "on" to enable the turret trigger, else "off"
+OPTION_WINDUP_ON_OFF = "off" # set to "on" to enable the windup motor, else "off"
 
 
 """ USER INPUTS FOR GPIO STUFF """
@@ -102,10 +105,12 @@ def print_debug(phrase):
     formatted_epoch_time = time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime(time.time()))
     print(f'{formatted_epoch_time} - DEBUG - {phrase}')
 
+
 def center_turret():
     print_debug(f'centering turret slowly')
     TURRET_CENTER_ANGLE = TURRET_ANGLE_RANGE / 2 + LEFT_MOST_ANGLE
     kit.servo[0].angle = TURRET_CENTER_ANGLE
+
 
 def move_servo(desired_angle):
     # print_debug(f'move_servo starting')
@@ -283,6 +288,7 @@ while True:
             COUNTER_NUMBER_OF_SHOTS += 1
             GPIO.output(WINDUP_MOTOR_PIN ,GPIO.LOW) # this will windown gun motor
             time_to_cool_down = time_current + GUN_COOLDOWN_TIMER
+            time.sleep(GUN_COOLDOWN_TIMER)
             break # breaks out of while loop: "while GPIO.input(15) == 1"
         
         if not flagSpotted and time_at_first_spot !=0 and time_current > init_time_plus_G_W_T:
